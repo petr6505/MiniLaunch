@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MiniLaunch</string>
+    <string name="settings">MiniLaunch settings</string>
+    <string name="a11y_desc">Used only to lock the screen and open recents when you trigger those gestures. MiniLaunch does not read screen content.</string>
+</resources>

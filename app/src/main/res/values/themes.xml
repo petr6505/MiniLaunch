@@ -1,0 +1,49 @@
+<resources>
+    <style name="Theme.Mini.Home" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:typeface">monospace</item>
+        <item name="android:colorAccent">#FFFFFFFF</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:alertDialogTheme">@style/Theme.Mini.Alert</item>
+    </style>
+
+    <style name="Theme.Mini.Settings" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF000000</item>
+        <item name="android:statusBarColor">#FF000000</item>
+        <item name="android:navigationBarColor">#FF000000</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:typeface">monospace</item>
+        <item name="android:colorAccent">#FFFFFFFF</item>
+        <item name="android:colorControlActivated">#FFFFFFFF</item>
+        <item name="android:alertDialogTheme">@style/Theme.Mini.Alert</item>
+    </style>
+
+    <style name="Theme.Mini.Alert" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:typeface">monospace</item>
+        <item name="android:colorAccent">#FFFFFFFF</item>
+        <item name="android:colorBackground">#FF111111</item>
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+    </style>
+
+    <style name="Theme.Mini.Dialog" parent="@style/Theme.Mini.Alert">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+        <item name="android:windowAnimationStyle">@style/MiniSheetAnim</item>
+        <item name="android:backgroundDimAmount">0.45</item>
+    </style>
+
+    <style name="MiniSheetAnim" parent="">
+        <item name="android:windowEnterAnimation">@anim/sheet_in</item>
+        <item name="android:windowExitAnimation">@anim/sheet_out</item>
+    </style>
+</resources>
