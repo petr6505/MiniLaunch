@@ -44,10 +44,16 @@ object Cal {
         else -> "${type.substringAfterLast('.')} · $account"
     }
 
-    // null = follow whatever the calendar apps show (the shared 'visible' flag)
+    // "cals" missing = every calendar of every account; "app" = follow the calendar apps' shared 'visible' flag;
+    // an array = hand-picked calendar ids
+    fun followApp(o: JSONObject) = o.optString("cals") == "app"
     fun chosen(o: JSONObject): List<Long>? = o.optJSONArray("cals")?.let { a -> List(a.length()) { a.getLong(it) } }
 
-    fun describe(o: JSONObject): String = chosen(o)?.let { "${it.size} calendars" } ?: "calendars shown in your calendar app"
+    fun describe(o: JSONObject): String = when {
+        followApp(o) -> "calendars shown in your calendar app"
+        chosen(o) != null -> "${chosen(o)!!.size} calendars"
+        else -> "all accounts"
+    }
 
     class Item(val eventId: Long, val title: String, val begin: Long, val end: Long, val allDay: Boolean,
                val startDay: Int, val endDay: Int)
@@ -59,20 +65,27 @@ object Cal {
         if (!granted(ctx)) return emptyList()
         val ids = chosen(o)
         if (ids != null && ids.isEmpty()) return emptyList()
-        val sel = StringBuilder(if (ids == null) "${Instances.VISIBLE}=1" else "${Instances.CALENDAR_ID} IN (${ids.joinToString(",")})")
+        val sel = StringBuilder(when {
+            ids != null -> "${Instances.CALENDAR_ID} IN (${ids.joinToString(",")})"
+            followApp(o) -> "${Instances.VISIBLE}=1"
+            // every calendar that is actually syncing; unsynced copies are stale duplicates
+            else -> "${Instances.SYNC_EVENTS}=1"
+        })
         sel.append(" AND (${Instances.SELF_ATTENDEE_STATUS} IS NULL OR ${Instances.SELF_ATTENDEE_STATUS}!=${CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED})")
         val uri = Instances.CONTENT_URI.buildUpon().also {
             ContentUris.appendId(it, fromMs - 86_400_000L); ContentUris.appendId(it, toMs + 86_400_000L)
         }.build()
         val fromDay = julian(fromMs); val toDay = julian(toMs - 1)
         val out = ArrayList<Item>()
+        // the same event shared into several accounts shows up once
+        val seen = HashSet<String>()
         runCatching {
             ctx.contentResolver.query(uri, arrayOf(Instances.EVENT_ID, Instances.TITLE, Instances.BEGIN, Instances.END,
                 Instances.ALL_DAY, Instances.START_DAY, Instances.END_DAY), sel.toString(), null, "${Instances.BEGIN} ASC")?.use { c ->
                 while (c.moveToNext()) {
                     val it = Item(c.getLong(0), c.getString(1)?.trim().orEmpty().ifEmpty { "(no title)" }, c.getLong(2), c.getLong(3),
                         c.getInt(4) == 1, c.getInt(5), c.getInt(6))
-                    if (it.endDay >= fromDay && it.startDay <= toDay) out += it
+                    if (it.endDay >= fromDay && it.startDay <= toDay && seen.add("${it.title}|${it.begin}|${it.end}")) out += it
                 }
             }
         }
@@ -115,12 +128,13 @@ object Cal {
         Ui.choice(a, "open events in", opts, cur) { i -> onPick(if (i == 0) "" else apps[i - 1].first) }
     }
 
-    // multi-select grouped by account; onDone(null) = follow the calendar apps
-    fun pickCalendars(a: Activity, o: JSONObject, onDone: (JSONArray?) -> Unit) {
+    // multi-select grouped by account; onDone(null) = all calendars, "app" = follow the calendar apps, or an id array
+    fun pickCalendars(a: Activity, o: JSONObject, onDone: (Any?) -> Unit) {
         if (!granted(a)) { ask(a); return }
         val cals = calendars(a)
-        var follow = chosen(o) == null
-        val sel = (chosen(o) ?: cals.filter { it.visible }.map { it.id }).toMutableSet()
+        // 0 all, 1 follow app, 2 chosen
+        var mode = if (followApp(o)) 1 else if (chosen(o) != null) 2 else 0
+        val sel = (chosen(o) ?: if (mode == 1) cals.filter { it.visible }.map { it.id } else cals.map { it.id }).toMutableSet()
         val s = Ui.Sheet(a, "calendars")
         val rows = ArrayList<Pair<TextView, () -> String>>()
         fun refresh() = rows.forEach { (t, f) -> t.text = f() }
@@ -129,10 +143,13 @@ object Cal {
             rows += (r.getChildAt(0) as TextView) to text
             s.body.addView(r)
         }
-        addRow({ (if (follow) "(•) " else "( ) ") + "same as my calendar app" }, "whatever is ticked in samsung / google calendar") {
-            follow = true; sel.clear(); sel += cals.filter { it.visible }.map { it.id }
+        addRow({ (if (mode == 0) "(•) " else "( ) ") + "all calendars, all accounts" }, null) {
+            mode = 0; sel.clear(); sel += cals.map { it.id }
         }
-        addRow({ (if (!follow) "(•) " else "( ) ") + "choose below" }, null) { follow = false }
+        addRow({ (if (mode == 1) "(•) " else "( ) ") + "same as my calendar app" }, "whatever is ticked in samsung / google calendar") {
+            mode = 1; sel.clear(); sel += cals.filter { it.visible }.map { it.id }
+        }
+        addRow({ (if (mode == 2) "(•) " else "( ) ") + "choose below" }, null) { mode = 2 }
         var last = ""
         for (c in cals) {
             if (c.group != last) {
@@ -142,12 +159,12 @@ object Cal {
                 })
             }
             addRow({ (if (c.id in sel) "[x] " else "[ ] ") + c.name }, null) {
-                follow = false
+                mode = 2
                 if (!sel.add(c.id)) sel.remove(c.id)
             }
         }
         if (cals.isEmpty()) s.body.addView(Ui.tv(a, "no calendars found on this phone.", 14f, Ui.DIM))
-        s.scrollBody().button("cancel").button("save") { onDone(if (follow) null else JSONArray(sel.toList())) }
+        s.scrollBody().button("cancel").button("save") { onDone(when (mode) { 0 -> null; 1 -> "app"; else -> JSONArray(sel.toList()) }) }
         s.show()
     }
 }
