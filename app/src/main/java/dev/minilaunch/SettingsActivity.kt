@@ -95,8 +95,6 @@ class SettingsActivity : Activity() {
         "hidden" to "hidden apps", "system" to "system & permissions", "backup" to "backup & reset",
     )
 
-    // ------------------------------------------------------------------ row helpers
-
     private fun section(t: String) {
         box.addView(Ui.tv(this, t.uppercase(), 12f, Ui.DIM).apply {
             setPadding(0, Ui.dp(this@SettingsActivity, 22), 0, Ui.dp(this@SettingsActivity, 4))
@@ -154,7 +152,7 @@ class SettingsActivity : Activity() {
 
     private val alignOpts = listOf("left", "center", "right")
 
-    /** Sizes are stored internally in Android text units but shown as % of their default. */
+    // stored in sp/dp, shown as % of the default
     private fun sizeSlider(label: String, def: Int, min: Int, max: Int, get: () -> Int, set: (Int) -> Unit) {
         val fmt = { v: Int -> "${Math.round(v * 100f / def)}%" }
         row(label, fmt(get())) { Ui.slider(this, label, min, max, get(), fmt = fmt) { set(it); render(true) } }
@@ -163,8 +161,6 @@ class SettingsActivity : Activity() {
     private val density get() = resources.displayMetrics.density
     private fun pctOfWidth(dp: Int) = "${Math.round(dp * density * 100f / resources.displayMetrics.widthPixels)}%"
     private fun pctOfHeight(dp: Int) = "${Math.round(dp * density * 100f / resources.displayMetrics.heightPixels)}%" 
-
-    // ------------------------------------------------------------------ pages
 
     private fun main() {
         val isDefault = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME)
@@ -190,7 +186,7 @@ class SettingsActivity : Activity() {
         color("text colour", { Prefs.textColor }) { Prefs.textColor = it }
         color("wallpaper tint colour", { Prefs.dimColor }) { Prefs.dimColor = it }
         slider("wallpaper tint strength", 0, 100, "%", { Prefs.dim }) { Prefs.dim = it }
-        note("100% hides the wallpaper completely – pure black is easiest on OLED battery.")
+        note("100% hides the wallpaper completely - pure black is easiest on OLED battery.")
         slider("drawer background", 0, 100, "%", { Prefs.getInt("drawerDim", 88) }) { Prefs.setInt("drawerDim", it) }
         section("text")
         choice("letter case", listOf("as-is", "lowercase", "UPPERCASE"), { Prefs.textCase }) { Prefs.textCase = it }
@@ -209,7 +205,7 @@ class SettingsActivity : Activity() {
         }
         toggle("show status bar", null, { Prefs.showStatusBar }) { Prefs.showStatusBar = it }
         section("feel")
-        toggle("gentle motion", "soft fades & drifts when you open things – nothing moves while idle", { Prefs.motion }) { Prefs.motion = it }
+        toggle("gentle motion", "soft fades & drifts when you open things - nothing moves while idle", { Prefs.motion }) { Prefs.motion = it }
         section("presets")
         row("terminal", "green on black") { preset(0xFF33FF66.toInt(), 100) }
         row("paper", "black on white") { preset(0xFF111111.toInt(), 100, tint = 0xFFF2F0EA.toInt()) }
@@ -224,13 +220,13 @@ class SettingsActivity : Activity() {
     private fun header() {
         section("greeting")
         toggle("show greeting", "'good morning.' above the clock", { Prefs.showGreeting }) { Prefs.showGreeting = it }
-        row("your name", Prefs.greetName.ifEmpty { "not set – optional" }) {
+        row("your name", Prefs.greetName.ifEmpty { "not set - optional" }) {
             Ui.input(this, "your name", Prefs.greetName, "optional") { Prefs.greetName = it.trim(); render(true) }
         }
         section("clock")
         toggle("show clock", null, { Prefs.showClock }) { Prefs.showClock = it }
         choice("time format", listOf("follow system", "24-hour", "12-hour"), { Prefs.clockMode }) { Prefs.clockMode = it }
-        toggle("show seconds", "slightly more redraws – off saves battery", { Prefs.showSeconds }) { Prefs.showSeconds = it }
+        toggle("show seconds", "slightly more redraws - off saves battery", { Prefs.showSeconds }) { Prefs.showSeconds = it }
         toggle("bold clock", null, { Prefs.boldClock }) { Prefs.boldClock = it }
         section("status line")
         toggle("show date", null, { Prefs.showDate }) { Prefs.showDate = it }
@@ -251,7 +247,7 @@ class SettingsActivity : Activity() {
     private fun homeApps() {
         val keys = Prefs.homeApps.toMutableList()
         section("on your home screen")
-        if (keys.isEmpty()) note("nothing yet. keep it to a few – the ones you actually need.")
+        if (keys.isEmpty()) note("nothing yet. keep it to a few - the ones you actually need.")
         keys.forEachIndexed { i, key ->
             val app = Apps.byKey(key)
             val l = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -337,7 +333,6 @@ class SettingsActivity : Activity() {
             "\nminilaunch's own widgets are plain text and only update while you look at them.")
     }
 
-    /** A miniature of the home screen built from the real settings. */
     private fun layoutPreview(): View {
         val c = Prefs.textColor
         val dim = (c and 0x00FFFFFF) or (0x88 shl 24)
@@ -417,7 +412,7 @@ class SettingsActivity : Activity() {
 
     private fun weather() {
         section("location")
-        row("city", Prefs.weatherCity.ifEmpty { "not set – tap to search" }) {
+        row("city", Prefs.weatherCity.ifEmpty { "not set - tap to search" }) {
             Ui.input(this, "search city", "", "e.g. Prague") { q ->
                 if (q.isBlank()) return@input
                 Weather.geocode(q) { res ->
@@ -431,7 +426,7 @@ class SettingsActivity : Activity() {
                 }
             }
         }
-        row("use my approximate location", "one-time, from the last known network location – no GPS") { useLocation() }
+        row("use my approximate location", "one-time, from the last known network location - no GPS") { useLocation() }
         section("display")
         toggle("show weather", null, { Prefs.showWeather }) { Prefs.showWeather = it }
         toggle("fahrenheit", null, { Prefs.fahrenheit }) { Prefs.fahrenheit = it; Prefs.clearWeatherCache() }
@@ -439,8 +434,8 @@ class SettingsActivity : Activity() {
         choice("refresh at most every", opts.map { if (it < 60) "$it min" else "${it / 60} h" }, { opts.indexOf(Prefs.weatherRefresh).coerceAtLeast(0) }) {
             Prefs.weatherRefresh = opts[it]
         }
-        row("refresh now", Weather.text().ifEmpty { "–" }) { Weather.refresh(true) { render(true) } }
-        note("weather comes from open-meteo.com (no account, no key). it's only fetched while the home screen is open and the last value is older than the interval above – never in the background.")
+        row("refresh now", Weather.text().ifEmpty { "-" }) { Weather.refresh(true) { render(true) } }
+        note("weather comes from open-meteo.com (no account, no key). it's only fetched while the home screen is open and the last value is older than the interval above - never in the background.")
     }
 
     private fun setPlace(name: String, lat: Double, lon: Double) {
@@ -515,12 +510,12 @@ class SettingsActivity : Activity() {
             Prefs.remindEvery = every[it]
         }
         toggle("strict mode", "over the limit, 'open anyway' unlocks only after 15 s", { Prefs.limitBlocks }) { Prefs.limitBlocks = it }
-        note("limits are checked when you open an app from minilaunch. a single low-power alarm then reminds you if you're still in it when the time runs out – no background monitoring.")
+        note("limits are checked when you open an app from minilaunch. a single low-power alarm then reminds you if you're still in it when the time runs out - no background monitoring.")
         section("display")
         if (Actions.hasSecureSettings(this)) {
             toggle("grayscale screen", "colour makes apps more enticing", { Actions.isGrayscale(this) }) { Actions.setGrayscale(this, it) }
         } else {
-            row("grayscale screen", "needs a one-time permission – tap for how") {
+            row("grayscale screen", "needs a one-time permission - tap for how") {
                 Ui.info(this, "grayscale", "Connect the phone to a computer and run once:\n\nadb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS\n\nThen you can toggle grayscale here or with a gesture.")
             }
         }
@@ -554,25 +549,25 @@ class SettingsActivity : Activity() {
     private fun system() {
         val isDefault = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME)
         section("launcher")
-        row("default home app", if (isDefault) "minilaunch ✓" else "not default – tap to change") { requestHome() }
+        row("default home app", if (isDefault) "minilaunch ✓" else "not default - tap to change") { requestHome() }
         section("recent apps screen")
         RecentsTweaks.rows(this).forEach { (label, sub, fn) -> row(label, sub) { fn(); render(true) } }
         section("permissions")
-        row("usage access", if (Usage.hasAccess(this)) "granted ✓" else "not granted – limits & screen time") {
+        row("usage access", if (Usage.hasAccess(this)) "granted ✓" else "not granted - limits & screen time") {
             Actions.start(this, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
         val notif = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        row("notifications", if (notif) "granted ✓" else "not granted – limit reminders") {
+        row("notifications", if (notif) "granted ✓" else "not granted - limit reminders") {
             if (!notif) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 9)
             else Actions.start(this, Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
         }
-        row("accessibility (lock / recents)", if (LockService.enabled) "enabled ✓" else "off – double-tap-to-lock won't work") {
+        row("accessibility (lock / recents)", if (LockService.enabled) "enabled ✓" else "off - double-tap-to-lock won't work") {
             Actions.start(this, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-        row("secure settings (grayscale)", if (Actions.hasSecureSettings(this)) "granted ✓" else "not granted – needs adb") {
+        row("secure settings (grayscale)", if (Actions.hasSecureSettings(this)) "granted ✓" else "not granted - needs adb") {
             Ui.info(this, "secure settings", "Run once from a computer:\n\nadb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS")
         }
-        row("battery optimisation", "keep minilaunch optimised – it does nothing in the background") {
+        row("battery optimisation", "keep minilaunch optimised - it does nothing in the background") {
             Actions.start(this, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
         row("app info", null) { Actions.start(this, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }

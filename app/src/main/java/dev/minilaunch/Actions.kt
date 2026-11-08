@@ -46,7 +46,6 @@ object Gestures {
     }
 }
 
-/** Every action a gesture can trigger. "app:<key>" opens a specific app. */
 object Actions {
     val builtIn = listOf(
         "none" to "do nothing",
@@ -78,7 +77,7 @@ object Actions {
         return builtIn.firstOrNull { it.first == action }?.second ?: action
     }
 
-    /** Actions handled outside the home screen (no UI dependency). Returns false if it wants the host to handle it. */
+    // returns false for actions MainActivity has to handle itself
     fun runGlobal(a: Activity, action: String): Boolean {
         when (action) {
             "none" -> {}
@@ -107,7 +106,7 @@ object Actions {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(ctx, "No app found for this action", Toast.LENGTH_SHORT).show()
         } catch (_: SecurityException) {
-            // The specific screen is protected – open the app that handles it instead.
+            // e.g. SHOW_ALARMS needs a permission on some ROMs - fall back to opening the app
             if (!openHandlerApp(ctx, i)) Toast.makeText(ctx, "Not allowed", Toast.LENGTH_SHORT).show()
         }
     }
@@ -133,7 +132,7 @@ object Actions {
     private fun askA11y(a: Activity) {
         Ui.confirm(a, "Enable accessibility",
             "Locking the screen and opening recents need MiniLaunch's accessibility service.\n\n" +
-                "It reads nothing on screen – it only performs that one system action.\n\n" +
+                "It reads nothing on screen - it only performs that one system action.\n\n" +
                 "Settings → Installed apps → MiniLaunch → on.\n\n" +
                 "(If it's greyed out: App info → ⋮ → Allow restricted settings first.)", "open settings") {
             start(a, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

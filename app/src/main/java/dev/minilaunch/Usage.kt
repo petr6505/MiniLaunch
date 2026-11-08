@@ -14,14 +14,10 @@ import android.content.Intent
 import android.os.Process
 import java.util.Calendar
 
-/**
- * Screen-time + app-limit logic.
- *
- * Battery note: nothing polls. When you open a limited app from MiniLaunch, one inexact,
- * non-wakeup alarm is set for the moment its daily budget runs out. When it fires we check
- * (once) whether the app is still in front and, if so, notify and re-arm for the reminder interval.
- */
+// No polling: launching a limited app arms one alarm for when its budget runs out.
+// When it fires we check whether the app is still in front, notify, and re-arm.
 object Usage {
+    @Suppress("DEPRECATION") // the replacement needs API 29+ AND a non-null attribution tag
     fun hasAccess(ctx: Context): Boolean {
         val ops = ctx.getSystemService(AppOpsManager::class.java)
         return ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName) ==
@@ -34,10 +30,9 @@ object Usage {
 
     private var cache: Map<String, Long> = emptyMap()
     private var cacheAt = 0L
-    /** Unlock count since midnight, filled in by [today]. */
     @Volatile var unlocks = 0; private set
 
-    /** Foreground time per package since midnight (ms). Cached for 30 s. Call off the main thread. */
+    // ms in foreground per package since midnight. Not for the main thread.
     fun today(ctx: Context, maxAgeMs: Long = 30_000): Map<String, Long> {
         val now = System.currentTimeMillis()
         if (now - cacheAt < maxAgeMs) return cache
@@ -45,7 +40,6 @@ object Usage {
         val usm = ctx.getSystemService(UsageStatsManager::class.java)
         val events = usm.queryEvents(startOfDay(), now)
         val e = UsageEvents.Event()
-        // package -> set of its activities currently resumed
         val open = HashMap<String, HashSet<String>>()
         val since = HashMap<String, Long>()
         val total = HashMap<String, Long>()
@@ -80,9 +74,6 @@ object Usage {
         return total
     }
 
-    fun invalidate() { cacheAt = 0 }
-
-    /** Package currently in front (best effort, looks at the last 30 min of events). */
     fun foreground(ctx: Context): String? {
         if (!hasAccess(ctx)) return null
         val usm = ctx.getSystemService(UsageStatsManager::class.java)
@@ -106,8 +97,6 @@ object Usage {
         return if (m >= 60) "${m / 60}h ${m % 60}m" else "${m}m"
     }
 
-    // ------------------------------------------------------------------ limits
-
     fun limitMinutes(pkg: String) = Prefs.limits.optJSONObject(pkg)?.optInt("m", 0) ?: 0
     fun delaySeconds(pkg: String) = Prefs.limits.optJSONObject(pkg)?.optInt("d", 0) ?: 0
 
@@ -128,11 +117,9 @@ object Usage {
 
     fun schedule(ctx: Context, pkg: String, inMs: Long) {
         val am = ctx.getSystemService(AlarmManager::class.java)
-        // Inexact + non-wakeup: the cheapest alarm Android offers.
         am.set(AlarmManager.RTC, System.currentTimeMillis() + inMs.coerceAtLeast(30_000), pi(ctx, pkg))
     }
 
-    /** Called right after we launch an app. */
     fun armFor(ctx: Context, pkg: String, usedMs: Long) {
         val lim = limitMinutes(pkg)
         if (lim <= 0) return

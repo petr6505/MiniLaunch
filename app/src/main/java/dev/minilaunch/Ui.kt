@@ -21,19 +21,17 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.BaseAdapter
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 
-/** Small view/dialog toolkit. Everything is monospace, everything is plain framework views. */
+// Custom dialogs instead of AlertDialog so titles/buttons are monospace too.
 object Ui {
     const val FG = 0xFFEEEEEE.toInt()
     const val DIM = 0xFF888888.toInt()
     const val LINE = 0xFF333333.toInt()
-    const val BG = 0xFF111111.toInt()
 
     fun dp(ctx: Context, v: Number): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), ctx.resources.displayMetrics).toInt()
@@ -50,7 +48,6 @@ object Ui {
     fun ripple(color: Int = 0x33FFFFFF) = RippleDrawable(ColorStateList.valueOf(color), null,
         GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = 14f })
 
-    /** Subtly rounded outline box (used for previews). */
     fun box(ctx: Context, stroke: Int = LINE, fill: Int = 0): GradientDrawable = GradientDrawable().apply {
         cornerRadius = dp(ctx, 6).toFloat(); setColor(fill); setStroke(dp(ctx, 1), stroke)
     }
@@ -74,8 +71,6 @@ object Ui {
             background = ripple()
             setOnClickListener { onClick() }
         }
-
-    // ------------------------------------------------------------------ dialogs
 
     class Sheet(val activity: Activity, title: String?) {
         val dialog = Dialog(activity, R.style.Theme_Mini_Dialog)
@@ -106,7 +101,7 @@ object Ui {
             if (buttons.childCount > 0) root.addView(buttons, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             dialog.setContentView(root)
             dialog.setCanceledOnTouchOutside(true)
-            // Exact width (not MATCH_PARENT + inset) so the margin around the box counts as "outside".
+            // explicit width so taps in the margin count as outside
             val w = activity.resources.displayMetrics.widthPixels - 2 * dp(activity, 18)
             dialog.window?.setLayout(w, WRAP_CONTENT)
             if (!activity.isFinishing) dialog.show()
@@ -124,7 +119,6 @@ object Ui {
             .scrollBody().button("cancel").button(ok, onClick = onOk).show()
     }
 
-    /** A list of tappable rows. */
     fun menu(a: Activity, title: String?, items: List<Pair<String, () -> Unit>>) {
         val s = Sheet(a, title)
         for ((label, fn) in items) {
@@ -170,7 +164,7 @@ object Ui {
         showKeyboard(e)
     }
 
-    /** Focus a field and raise the keyboard – waits until its window really has focus, otherwise Android ignores it. */
+    // showSoftInput is ignored until the dialog window has focus
     fun showKeyboard(e: EditText) {
         e.requestFocus()
         val raise = {
@@ -257,7 +251,6 @@ object Ui {
         h.toLong(16).toInt()
     }.getOrNull()
 
-    /** Searchable app picker. */
     fun pickApp(a: Activity, title: String, includeHidden: Boolean = true, onPick: (AppEntry) -> Unit) {
         val s = Sheet(a, title)
         val search = edit(a, "", "search…")
@@ -289,7 +282,6 @@ object Ui {
         s.show()
     }
 
-    /** Pick a gesture action (built-in or app). */
     fun pickAction(a: Activity, title: String, current: String, onPick: (String) -> Unit) {
         val opts = Actions.builtIn + ("app" to "open an app…")
         val labels = opts.map { it.second }
@@ -299,6 +291,4 @@ object Ui {
             else onPick(opts[i].first)
         }
     }
-
-    fun frame(ctx: Context) = FrameLayout(ctx)
 }

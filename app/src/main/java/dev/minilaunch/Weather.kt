@@ -8,11 +8,7 @@ import java.net.URL
 import java.net.URLEncoder
 import kotlin.math.roundToInt
 
-/**
- * Weather from open-meteo.com (free, no API key, no account).
- * Only fetched while the home screen is visible and the cached value is older than the
- * configured interval – there is no background job of any kind.
- */
+// open-meteo.com, no key needed. Only refreshed from MainActivity.onResume.
 object Weather {
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var inFlight = false
@@ -32,7 +28,6 @@ object Weather {
 
     fun stale() = System.currentTimeMillis() - Prefs.weatherTime > Prefs.weatherRefresh * 60_000L
 
-    /** Refresh if stale (or forced). Callback on main thread only when something changed. */
     fun refresh(force: Boolean, done: (String) -> Unit) {
         if (!configured() || inFlight || (!force && !stale())) return
         inFlight = true

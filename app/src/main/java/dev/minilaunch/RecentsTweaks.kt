@@ -5,12 +5,8 @@ import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
 
-/**
- * The recent-apps screen is drawn by the system launcher (on Samsung: One UI Home), even when
- * MiniLaunch is the default home app. Its "Show recommended apps" switch lives in One UI Home's
- * private storage (verified: no system setting changes when toggled), so the best we can do is
- * jump straight to that switch.
- */
+// Recents is still drawn by One UI Home. Its "show recommended apps" switch is stored in
+// One UI Home's private prefs (no Settings key changes when toggled), so just open that screen.
 object RecentsTweaks {
     private val RECENTS_SETTINGS = ComponentName(
         "com.sec.android.app.launcher", "com.android.quickstep.RecentsSettingsActivity")

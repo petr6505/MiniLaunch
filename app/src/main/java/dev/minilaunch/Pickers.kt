@@ -27,7 +27,6 @@ object WidgetPicker {
 
     private var pendingPos = 0
 
-    /** One searchable list: MiniLaunch's widgets first, then every Android widget, each with a preview. */
     fun open(a: Activity) {
         class Row(val header: String? = null, val own: String? = null, val info: AppWidgetProviderInfo? = null,
                   val title: String = "", val sub: String = "")
@@ -46,7 +45,7 @@ object WidgetPicker {
                     runCatching { pm.getApplicationLabel(pm.getApplicationInfo(p.provider.packageName, 0)).toString() }
                         .getOrDefault(p.provider.packageName)
                 }
-                Row(info = p, title = "$app – ${p.loadLabel(pm)}",
+                Row(info = p, title = "$app - ${p.loadLabel(pm)}",
                     sub = "${p.targetCellWidth.takeIf { it > 0 } ?: ((p.minWidth / d + 30) / 70).toInt().coerceAtLeast(1)}×" +
                         "${p.targetCellHeight.takeIf { it > 0 } ?: ((p.minHeight / d + 30) / 70).toInt().coerceAtLeast(1)}")
             }.sortedBy { it.title.lowercase() }.forEach { all += it }
@@ -96,7 +95,7 @@ object WidgetPicker {
                     val k = keyOf(info)
                     img.tag = k
                     fun put(dr: android.graphics.drawable.Drawable?) {
-                        // Real previews get room; plain app-icon fallbacks stay small.
+                        // icon fallbacks look silly at full preview size
                         img.maxHeight = Ui.dp(a, if (k in iconOnly) 44 else 130)
                         img.setImageDrawable(dr)
                     }
@@ -192,43 +191,6 @@ object WidgetPicker {
             WidgetHost.host(a).deleteAppWidgetId(pendingId); pendingId = -1; pendingInfo = null; return
         }
         if (req == REQ_BIND) configure(a) else finish(a)
-    }
-
-    /** Searchable list of (label, sub-label). */
-    fun pickFrom(a: Activity, title: String, rows: List<Pair<String, String>>, onPick: (Int) -> Unit) {
-        val s = Ui.Sheet(a, title)
-        val search = Ui.edit(a, "", "search…")
-        var idx = rows.indices.toList()
-        val list = ListView(a).apply { divider = null }
-        val adapter = object : BaseAdapter() {
-            override fun getCount() = idx.size
-            override fun getItem(p: Int) = rows[idx[p]]
-            override fun getItemId(p: Int) = p.toLong()
-            override fun getView(p: Int, v: View?, parent: ViewGroup?): View {
-                val box = (v as? LinearLayout) ?: LinearLayout(a).apply {
-                    orientation = LinearLayout.VERTICAL
-                    val pad = Ui.dp(a, 10); setPadding(0, pad, 0, pad)
-                    addView(Ui.tv(a, "", 15f)); addView(Ui.tv(a, "", 12f, Ui.DIM))
-                }
-                (box.getChildAt(0) as TextView).text = rows[idx[p]].first
-                (box.getChildAt(1) as TextView).text = rows[idx[p]].second
-                return box
-            }
-        }
-        list.adapter = adapter
-        list.setOnItemClickListener { _, _, p, _ -> s.dialog.dismiss(); onPick(idx[p]) }
-        search.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(e: Editable?) {
-                val q = Apps.normalize(e.toString())
-                idx = rows.indices.filter { Apps.normalize(rows[it].first).contains(q) }
-                adapter.notifyDataSetChanged()
-            }
-            override fun beforeTextChanged(c: CharSequence?, s: Int, b: Int, n: Int) {}
-            override fun onTextChanged(c: CharSequence?, s: Int, b: Int, n: Int) {}
-        })
-        s.body.addView(search)
-        s.body.addView(list, LinearLayout.LayoutParams(MATCH_PARENT, a.resources.displayMetrics.heightPixels / 2))
-        s.button("cancel").show()
     }
 }
 

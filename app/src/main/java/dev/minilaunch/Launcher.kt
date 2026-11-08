@@ -16,7 +16,6 @@ class App : Application() {
     }
 }
 
-/** Opening apps, with the optional mindful-delay and daily-limit interventions in between. */
 object Launcher {
     private val main = Handler(Looper.getMainLooper())
 
@@ -50,7 +49,6 @@ object Launcher {
     private fun usedLine(used: Long, limit: Int) =
         if (limit > 0) "used ${Usage.fmt(used)} of ${limit}m today" else "used ${Usage.fmt(used)} today"
 
-    /** "Take a breath" countdown before the app opens. */
     private fun pause(a: Activity, app: AppEntry, used: Long, limit: Int, seconds: Int, bounds: Rect?) {
         val s = Ui.Sheet(a, null)
         val big = Ui.tv(a, "$seconds", 48f, Ui.FG, bold = true).apply { gravity = Gravity.CENTER }
@@ -64,7 +62,6 @@ object Launcher {
         var cancelled = false
         s.button("not now") { cancelled = true }
         val d = s.show()
-        // A slow in-and-out, like a breath (4 s in, 4 s out) – only while this dialog is open.
         val anim = android.animation.ObjectAnimator.ofPropertyValuesHolder(breathe,
             android.animation.PropertyValuesHolder.ofFloat(android.view.View.SCALE_X, 0.92f, 1.12f),
             android.animation.PropertyValuesHolder.ofFloat(android.view.View.SCALE_Y, 0.92f, 1.12f),
@@ -95,7 +92,7 @@ object Launcher {
             s.button("open anyway") { open(a, app, bounds); Usage.schedule(a, app.pkg, Prefs.remindEvery * 60_000L) }
             s.show()
         } else {
-            // Strict mode: you can still open it, but only after waiting 15 seconds.
+            // strict mode: 15s wait before 'open anyway'
             var left = 15
             lateinit var btn: android.widget.TextView
             val d = s.show()

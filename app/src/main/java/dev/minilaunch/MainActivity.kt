@@ -55,14 +55,11 @@ class MainActivity : Activity() {
     private var insets = Rect()
     private var imeBottom = 0
 
-    private val appsChanged: () -> Unit = { if (drawer.visibility == View.VISIBLE) filter() ; buildHome() }
-
-    // ------------------------------------------------------------------ lifecycle
+    private val appsChanged: () -> Unit = { if (drawer.visibility == View.VISIBLE) filter(); buildHome() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
-        window.setDecorFitsSystemWindows(false)
 
         root = FrameLayout(this)
         dimView = View(this)
@@ -81,7 +78,7 @@ class MainActivity : Activity() {
 
         root.setOnApplyWindowInsetsListener { _, wi ->
             val sb = wi.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            // Keep the top inset even when the status bar is hidden so the clock doesn't jump.
+            // keep the top inset when the status bar is hidden so the clock doesn't jump
             val top = maxOf(sb.top, wi.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top)
             insets = Rect(sb.left, top, sb.right, sb.bottom)
             imeBottom = wi.getInsets(WindowInsets.Type.ime()).bottom
@@ -135,7 +132,6 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Home pressed while we're already in front: go back to the plain home screen.
         if (Intent.ACTION_MAIN == intent.action) closeOverlays()
     }
 
@@ -150,8 +146,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // ------------------------------------------------------------------ building UI
-
     private fun applyAll() {
         appliedVersion = Prefs.version
         applyWindow()
@@ -161,7 +155,7 @@ class MainActivity : Activity() {
         applyPadding()
     }
 
-    /** Own widgets that show live-ish data (screen time, dates) are re-rendered on resume. */
+    // own widgets whose content goes stale (screen time, dates) get re-rendered on resume
     private val refreshers = ArrayList<() -> Unit>()
 
     private fun refreshDynamic() {
@@ -207,7 +201,7 @@ class MainActivity : Activity() {
         buildWidgetPage()
         home.gravity = HomeStyle.gravity(Prefs.headerAlign)
 
-        // --- header
+        // header
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = HomeStyle.gravity(Prefs.headerAlign)
@@ -258,7 +252,6 @@ class MainActivity : Activity() {
                 isAllCaps = Prefs.textCase == 2
                 setShadowLayer(if (Prefs.dim < 30) 6f else 0f, 0f, 1f, 0x88000000.toInt())
             }
-            // TextClock can't lowercase itself; a transformation method can.
             if (Prefs.textCase == 1) date.transformationMethod = LowerCase
             tap(date, "tap_date"); addInfo(date)
         }
@@ -275,11 +268,11 @@ class MainActivity : Activity() {
         if (info.childCount > 0) header.addView(info)
         if (header.childCount > 0) home.addView(header, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
-        // --- widgets under header
+        // widgets under header
         val widthPx = contentWidth()
         addWidgets(home, widthPx, Ui.dp(this, 16), 0)
 
-        // --- apps
+        // apps
         val middle = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = when (Prefs.appsVPos) { 0 -> Gravity.TOP; 2 -> Gravity.BOTTOM; else -> Gravity.CENTER_VERTICAL } or
@@ -317,13 +310,9 @@ class MainActivity : Activity() {
 
     private fun greeting() = HomeStyle.greeting()
 
-    // ------------------------------------------------------------------ motion
-    // Everything here runs only in response to a touch or to coming back home; nothing loops.
-
     private val ease = android.view.animation.DecelerateInterpolator(2f)
     private val motion get() = Prefs.motion
 
-    /** Softly dims a label while it's being pressed. */
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     private fun pressFeedback(v: View) {
         v.setOnTouchListener { view, e ->
@@ -336,7 +325,6 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Children drift up into place one after another. */
     private fun cascade(group: ViewGroup, dy: Float = 14f, step: Long = 28, dur: Long = 360) {
         if (!motion) return
         val d = Ui.dp(this, dy).toFloat()
@@ -345,7 +333,6 @@ class MainActivity : Activity() {
             for (c in 0 until g.childCount) {
                 val v = g.getChildAt(c)
                 if (v.visibility != View.VISIBLE) continue
-                // Recurse into plain containers so each line moves on its own.
                 if (v is LinearLayout && v.orientation == LinearLayout.VERTICAL && v.childCount in 1..12 && v !is android.appwidget.AppWidgetHostView) {
                     walk(v); continue
                 }
@@ -408,8 +395,6 @@ class MainActivity : Activity() {
         v.setOnClickListener { runAction(Prefs.gesture(gesture)) }
     }
 
-    // ------------------------------------------------------------------ drawer
-
     private val adapter = object : BaseAdapter() {
         override fun getCount() = results.size
         override fun getItem(p: Int) = results[p]
@@ -450,7 +435,7 @@ class MainActivity : Activity() {
             adapter = this@MainActivity.adapter
             setOnItemClickListener { _, v, p, _ -> results.getOrNull(p)?.let { Launcher.launch(this@MainActivity, it, bounds(v)) } }
             setOnItemLongClickListener { _, _, p, _ -> results.getOrNull(p)?.let { appMenu(it) }; true }
-            // Pull down at the top of the list closes the drawer.
+            // fling down at the top closes the drawer
             val det = GestureDetector(this@MainActivity, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
                     if (e1 != null && vy > 1500 && abs(vy) > abs(vx) && !canScrollVertically(-1)) { closeOverlays(); return true }
@@ -529,7 +514,7 @@ class MainActivity : Activity() {
         if (motion) list.scheduleLayoutAnimation()
         if (keyboard) {
             search.requestFocus()
-            search.post { getSystemService(InputMethodManager::class.java).showSoftInput(search, InputMethodManager.SHOW_IMPLICIT) }
+            search.post { getSystemService(InputMethodManager::class.java).showSoftInput(search, 0) }
         } else {
             search.clearFocus()
             list.requestFocus()
@@ -564,8 +549,6 @@ class MainActivity : Activity() {
         if (!::search.isInitialized) return
         getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(search.windowToken, 0)
     }
-
-    // ------------------------------------------------------------------ menus
 
     private fun appMenu(app: AppEntry) {
         val homeApps = Prefs.homeApps.toMutableList()
@@ -631,8 +614,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // ------------------------------------------------------------------ gestures
-
     private var downOnInteractive = false
     private var flung = false
 
@@ -651,7 +632,7 @@ class MainActivity : Activity() {
                     else -> return false
                 }
                 if (widgetPage.visibility == View.VISIBLE) {
-                    // On the widgets page, the opposite of the gesture that opened it goes back.
+                    // reverse of whatever gesture opened the page closes it
                     val opened = Gestures.all.map { it.first }.firstOrNull { Prefs.gesture(it) == "widgets" }
                     val atTop = !widgetPage.canScrollVertically(-1)
                     val atBottom = !widgetPage.canScrollVertically(1)
@@ -696,10 +677,9 @@ class MainActivity : Activity() {
             flung = false
             downOnInteractive = hit(interactive, ev.rawX, ev.rawY)
         }
-        // While a scrollable widget page is open, let vertical scrolling win.
         detector.onTouchEvent(ev)
         if (flung) {
-            // A swipe happened: cancel whatever the child under the finger thought was a tap.
+            // swallow the tap the child under the finger would otherwise get
             val cancel = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
             super.dispatchTouchEvent(cancel); cancel.recycle()
             if (ev.actionMasked == MotionEvent.ACTION_UP) flung = false

@@ -21,14 +21,9 @@ class AppEntry(
     val work: Boolean,
 ) {
     val label: String get() = Prefs.label(key) ?: sysLabel
-    /** Lower-cased, accent-stripped label used for searching. */
     val norm: String get() = Apps.normalize(label)
 }
 
-/**
- * In-memory app list. Loaded once, then kept up to date by a LauncherApps callback
- * (no polling, no broadcast receivers that wake the app).
- */
 object Apps {
     @Volatile var all: List<AppEntry> = emptyList(); private set
     private val listeners = mutableSetOf<() -> Unit>()
@@ -91,7 +86,6 @@ object Apps {
         }.start()
     }
 
-    /** Re-sort after renames. */
     fun resort() {
         all = all.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
     }
@@ -100,7 +94,7 @@ object Apps {
         val src = if (includeHidden) all else visible()
         val q = normalize(query.trim())
         if (q.isEmpty()) return src
-        // Score: 0 = prefix, 1 = word prefix, 2 = contains, 3 = initials / subsequence
+        // lower score = better match
         val scored = ArrayList<Pair<Int, AppEntry>>()
         for (a in src) {
             val n = a.norm

@@ -16,7 +16,6 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONArray
@@ -27,14 +26,13 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-/** Hosting of regular Android widgets. Listening only while the home screen is started. */
 object WidgetHost {
     const val HOST_ID = 0x4D4C // "ML"
 
     val positions = listOf("under the clock", "above the apps", "below the apps", "bottom of the screen", "widgets page")
     const val POS_PAGE = 4
     fun pos(o: JSONObject) = o.optInt("pos", 0).coerceIn(0, POS_PAGE)
-    /** -1 = follow the home apps alignment */
+    // -1 = same as home apps
     fun align(o: JSONObject) = o.optInt("align", -1).let { if (it < 0) Prefs.align else it }
     private var host: AppWidgetHost? = null
 
@@ -74,13 +72,12 @@ object WidgetHost {
                 val app = runCatching {
                     ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(info.provider.packageName, 0))
                 }.getOrDefault(info.provider.packageName)
-                "$app – ${info.loadLabel(ctx.packageManager)}"
+                "$app - ${info.loadLabel(ctx.packageManager)}"
             }
         }
         else -> OwnWidgets.types.firstOrNull { it.first == o.optString("k") }?.second ?: "widget"
     }
 
-    /** Build the view for a widget entry. Width is the full content width. */
     fun view(a: Activity, o: JSONObject, widthPx: Int, onChanged: () -> Unit): View? = when (o.optString("t")) {
         "sys" -> {
             val id = o.optInt("id")
@@ -101,7 +98,6 @@ object WidgetHost {
     }
 }
 
-/** MiniLaunch's own text-only widgets. They render nothing until the screen is visible. */
 object OwnWidgets {
     val types = listOf(
         "screentime" to "screen time today",
@@ -112,7 +108,6 @@ object OwnWidgets {
         "calendar" to "month calendar",
     )
 
-    /** Static sample text shown in the widget picker. */
     fun sample(type: String): String = when (type) {
         "screentime" -> "screen time 1h 42m · 23 unlocks\n  messages  31m\n  browser   18m"
         "todo" -> "[ ] call mum\n[x] water the plants\n+ add"
@@ -301,7 +296,6 @@ object OwnWidgets {
     )
 }
 
-/** Shared text styling helpers for the home screen. */
 object HomeStyle {
     fun gravity(align: Int) = when (align) {
         1 -> Gravity.CENTER_HORIZONTAL
@@ -322,6 +316,4 @@ object HomeStyle {
         val g = when (h) { in 5..11 -> "good morning"; in 12..16 -> "good afternoon"; in 17..21 -> "good evening"; else -> "good night" }
         return if (Prefs.greetName.isBlank()) "$g." else "$g, ${Prefs.greetName.trim()}."
     }
-
-    val wrap get() = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
 }

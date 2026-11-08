@@ -3,10 +3,7 @@ package dev.minilaunch
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 
-/**
- * Optional accessibility service used ONLY for global actions (lock / recents / shade).
- * It is limited to MiniLaunch's own package in accessibility.xml and never inspects content.
- */
+// Only used for global actions (lock, recents). Scoped to our own package in accessibility.xml.
 class LockService : AccessibilityService() {
     override fun onServiceConnected() { instance = this }
     override fun onDestroy() { instance = null; super.onDestroy() }
