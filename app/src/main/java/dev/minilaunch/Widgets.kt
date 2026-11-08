@@ -363,15 +363,18 @@ object OwnWidgets {
                 else -> tf.format(e.begin).lowercase()
             }
             val until = if (e.endDay > day) "  → " + (if (e.endDay - today == 1) "tomorrow" else df.format(dayMs(e.endDay))) else ""
-            val line = if (left) "  " + time.padEnd(7) + " " + e.title + until else time + "  " + e.title + until
-            box.addView(text(a, HomeStyle.case(line)).apply {
+            // same dimmed " · " separator as the date · battery · weather line; times right-aligned so the dots line up
+            // without the dot, times are left-aligned as before
+            val dot = o.optBoolean("dot", true)
+            val head = if (!left) time else if (dot) time.padStart(7) else time.padEnd(7)
+            val sep = if (dot) " · " else if (left) " " else "  "
+            val sp = android.text.SpannableString(HomeStyle.case(head + sep + e.title + until))
+            sp.setSpan(android.text.style.ForegroundColorSpan(dimColor()), head.length, head.length + sep.length, 0)
+            box.addView(text(a, sp).apply {
                 setPadding(0, Ui.dp(a, 2), 0, Ui.dp(a, 2))
                 // wrapped title lines hang under the title, not under the time
-                if (left) {
-                    val sp = android.text.SpannableString(text)
-                    sp.setSpan(android.text.style.LeadingMarginSpan.Standard(0, paint.measureText("  " + "".padEnd(7) + " ").toInt()), 0, sp.length, 0)
-                    text = sp
-                }
+                if (left) sp.setSpan(android.text.style.LeadingMarginSpan.Standard(0, paint.measureText(head + sep).toInt()), 0, sp.length, 0)
+                text = sp
                 if (!left) gravity = HomeStyle.gravity(curAlign)
                 setOnClickListener { Cal.openEvent(a, o, e) }
             })

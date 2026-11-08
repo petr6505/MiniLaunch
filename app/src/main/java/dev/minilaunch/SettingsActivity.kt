@@ -447,6 +447,9 @@ class SettingsActivity : Activity() {
                         Ui.slider(this, "max events shown (0 = no limit)", 0, 50, maxV,
                             fmt = { if (it == 0) "no limit" else "$it" }) { n -> WidgetHost.update(i) { put("max", n) }; render(true) }
                     }
+                    items += "dot between time and event: " + (if (o.optBoolean("dot", true)) "on" else "off") to {
+                        WidgetHost.update(i) { put("dot", !o.optBoolean("dot", true)) }; render(true)
+                    }
                     items += "all-day events: " + (if (o.optBoolean("allday", true)) "shown" else "hidden") to {
                         WidgetHost.update(i) { put("allday", !o.optBoolean("allday", true)) }; render(true)
                     }
