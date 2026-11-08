@@ -63,6 +63,7 @@ object Prefs {
     var showSeconds: Boolean get() = bool("showSeconds", false); set(v) = setBool("showSeconds", v)
     var dateFormat: String get() = str("dateFormat", "EEE, d MMM"); set(v) = setStr("dateFormat", v)
     var infoOneLine: Boolean get() = bool("infoOneLine", true); set(v) = setBool("infoOneLine", v)
+    var headerLine: Boolean get() = bool("headerLine", false); set(v) = setBool("headerLine", v)
 
     // home apps
     var homeApps: List<String>

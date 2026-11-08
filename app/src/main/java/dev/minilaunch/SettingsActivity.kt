@@ -241,6 +241,7 @@ class SettingsActivity : Activity() {
         toggle("show battery %", null, { Prefs.showBattery }) { Prefs.showBattery = it }
         toggle("show weather", if (Weather.configured()) Prefs.weatherCity else "set a location in weather", { Prefs.showWeather }) { Prefs.showWeather = it }
         toggle("status on one line", "off = date, battery and weather stacked", { Prefs.infoOneLine }) { Prefs.infoOneLine = it }
+        toggle("line below clock & status", "a thin line under the whole block", { Prefs.headerLine }) { Prefs.headerLine = it }
         note("tap actions for the clock, date, battery and weather are in gestures.")
     }
 
@@ -319,9 +320,13 @@ class SettingsActivity : Activity() {
             val bits = mutableListOf(WidgetHost.positions[WidgetHost.pos(o)])
             if (o.optString("t") == "sys") bits += "height " + pctOfHeight(o.optInt("h", 120))
             else if (o.has("align") && o.optInt("align") >= 0) bits += alignOpts[o.optInt("align")]
+            if (WidgetHost.half(o)) bits += "half width"
+            if (WidgetHost.line(o)) bits += "line below"
+            if (o.optString("k") in OwnWidgets.SCROLLABLE && o.optInt("h", 0) > 0) bits += "height " + pctOfHeight(o.optInt("h")) + ", scrolls"
             when (o.optString("k")) {
                 "countdown" -> bits += o.optString("label") + " " + o.optString("date")
                 "screentime" -> bits += "top ${o.optInt("top", 3)} apps"
+                "agenda" -> bits += "next ${o.optInt("days", 7)} days"
             }
             row("${i + 1}. " + WidgetHost.title(this, o), bits.joinToString(" · ")) { widgetMenu(i, o) }
         }
@@ -330,7 +335,8 @@ class SettingsActivity : Activity() {
         choice("default spot for new widgets", WidgetHost.positions, { Prefs.widgetDefaultPos }) { Prefs.widgetDefaultPos = it }
         val g = Gestures.all.firstOrNull { Prefs.gesture(it.first) == "widgets" }
         note("widgets placed on the 'widgets page' open with: " + (g?.second ?: "(assign 'widgets page' to a gesture)") +
-            "\nminilaunch's own widgets are plain text and only update while you look at them.")
+            "\nminilaunch's own widgets are plain text and only update while you look at them." +
+            "\ntwo half-width widgets next to each other in this list share one row.")
     }
 
     private fun layoutPreview(): View {
@@ -349,11 +355,23 @@ class SettingsActivity : Activity() {
                 gravity = HomeStyle.gravity(align); setPadding(0, Ui.dp(this@SettingsActivity, 1), 0, Ui.dp(this@SettingsActivity, 1))
             }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         val arr = Prefs.widgets
+        fun hr() = frame.addView(View(this).apply { setBackgroundColor((c and 0x00FFFFFF) or (0x55 shl 24)) },
+            LinearLayout.LayoutParams(MATCH_PARENT, maxOf(1, Ui.dp(this, 1))).apply { setMargins(0, Ui.dp(this@SettingsActivity, 3), 0, Ui.dp(this@SettingsActivity, 3)) })
         fun widgetsAt(pos: Int) {
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                if (WidgetHost.pos(o) != pos) continue
-                line("▢ " + WidgetHost.title(this, o).take(28), if (o.optString("t") == "sys") 1 else WidgetHost.align(o), 10f, dim)
+            val list = (0 until arr.length()).map { arr.getJSONObject(it) }.filter { WidgetHost.pos(it) == pos }
+            var i = 0
+            while (i < list.size) {
+                val o = list[i]
+                if (WidgetHost.half(o) && i + 1 < list.size && WidgetHost.half(list[i + 1])) {
+                    val b = list[i + 1]
+                    line("▢ " + WidgetHost.title(this, o).take(13) + "  ▢ " + WidgetHost.title(this, b).take(13), 0, 10f, dim)
+                    if (WidgetHost.line(o) || WidgetHost.line(b)) hr()
+                    i += 2; continue
+                }
+                line("▢ " + WidgetHost.title(this, o).take(if (WidgetHost.half(o)) 14 else 28),
+                    if (o.optString("t") == "sys" && !WidgetHost.half(o)) 1 else WidgetHost.align(o), 10f, dim)
+                if (WidgetHost.line(o)) hr()
+                i++
             }
         }
         val ha = Prefs.headerAlign
@@ -363,6 +381,7 @@ class SettingsActivity : Activity() {
             if (Prefs.showBattery) "${getSystemService(android.os.BatteryManager::class.java).getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)}%" else null,
             if (Prefs.showWeather && Weather.configured()) Weather.text().ifEmpty { null } else null)
         if (info.isNotEmpty()) line(info.joinToString(" · "), ha, 9f)
+        if (Prefs.headerLine && (Prefs.showGreeting || Prefs.showClock || info.isNotEmpty())) hr()
         widgetsAt(0)
         val spacer = { frame.addView(View(this), LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)) }
         if (Prefs.appsVPos != 0) spacer()
@@ -384,7 +403,13 @@ class SettingsActivity : Activity() {
         items += "position: ${WidgetHost.positions[WidgetHost.pos(o)]}" to {
             Ui.choice(this, "where should it go?", WidgetHost.positions, WidgetHost.pos(o)) { p -> WidgetHost.update(i) { put("pos", p) }; render(true) }
         }
-        if (o.optString("t") == "own") items += "alignment" to {
+        items += "width: " + (if (WidgetHost.half(o)) "half" else "full") to {
+            WidgetHost.update(i) { put("half", !WidgetHost.half(o)) }; render(true)
+        }
+        items += "line below: " + (if (WidgetHost.line(o)) "on" else "off") to {
+            WidgetHost.update(i) { put("line", !WidgetHost.line(o)) }; render(true)
+        }
+        if (o.optString("t") == "own" || WidgetHost.half(o)) items += "alignment" to {
             val opts = listOf("same as home apps") + alignOpts
             Ui.choice(this, "alignment", opts, o.optInt("align", -1) + 1) { p -> WidgetHost.update(i) { put("align", p - 1) }; render(true) }
         }
@@ -393,6 +418,15 @@ class SettingsActivity : Activity() {
         if (o.optString("t") == "sys") items += "height" to {
             Ui.slider(this, "height (of screen)", 40, 700, o.optInt("h", 120), fmt = { pctOfHeight(it) }) { h -> WidgetHost.update(i) { put("h", h) }; render(true) }
         }
+        if (o.optString("k") in OwnWidgets.SCROLLABLE) {
+            val h = o.optInt("h", 0)
+            items += "height: " + (if (h > 0) pctOfHeight(h) + " of screen, scrolls" else "auto - fits everything") to {
+                Ui.slider(this, "height (0 = auto)", 0, 700, h,
+                    fmt = { if (it == 0) "auto" else pctOfHeight(it) + " of screen" }) { n ->
+                    WidgetHost.update(i) { put("h", if (n in 1..39) 40 else n) }; render(true)
+                }
+            }
+        }
         when (o.optString("k")) {
             "countdown" -> {
                 items += "change label" to { Ui.input(this, "label", o.optString("label")) { s -> WidgetHost.update(i) { put("label", s) }; render(true) } }
@@ -400,6 +434,29 @@ class SettingsActivity : Activity() {
             }
             "screentime" -> items += "number of apps listed" to {
                 Ui.slider(this, "top apps", 0, 10, o.optInt("top", 3), "") { n -> WidgetHost.update(i) { put("top", n) }; render(true) }
+            }
+            "agenda", "calendar" -> {
+                if (o.optString("k") == "agenda") {
+                    val h = o.optInt("h", 0)
+                    items += "days ahead: ${o.optInt("days", 7)}" to {
+                        Ui.slider(this, "days ahead", 1, 60, o.optInt("days", 7), " days") { n -> WidgetHost.update(i) { put("days", n) }; render(true) }
+                    }
+                    val maxDef = if (h > 0) 0 else 8
+                    val maxV = o.optInt("max", maxDef)
+                    items += "max events shown: " + (if (maxV <= 0) "no limit" else "$maxV") to {
+                        Ui.slider(this, "max events shown (0 = no limit)", 0, 50, maxV,
+                            fmt = { if (it == 0) "no limit" else "$it" }) { n -> WidgetHost.update(i) { put("max", n) }; render(true) }
+                    }
+                    items += "all-day events: " + (if (o.optBoolean("allday", true)) "shown" else "hidden") to {
+                        WidgetHost.update(i) { put("allday", !o.optBoolean("allday", true)) }; render(true)
+                    }
+                }
+                items += "calendars: " + Cal.describe(o) to {
+                    Cal.pickCalendars(this, o) { sel -> WidgetHost.update(i) { if (sel == null) remove("cals") else put("cals", sel) }; render(true) }
+                }
+                items += "open events in: " + Cal.appName(this, o) to {
+                    Cal.pickApp(this, o) { pkg -> WidgetHost.update(i) { put("app", pkg) }; render(true) }
+                }
             }
             "note" -> items += "edit text" to {
                 val uid = o.optString("uid")
@@ -560,6 +617,11 @@ class SettingsActivity : Activity() {
         row("notifications", if (notif) "granted ✓" else "not granted - limit reminders") {
             if (!notif) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 9)
             else Actions.start(this, Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+        }
+        val cal = Cal.granted(this)
+        row("calendar", if (cal) "granted ✓" else "not granted - calendar widgets") {
+            if (!cal) Cal.ask(this)
+            else Actions.start(this, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
         }
         row("accessibility (lock / recents)", if (LockService.enabled) "enabled ✓" else "off - double-tap-to-lock won't work") {
             Actions.start(this, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

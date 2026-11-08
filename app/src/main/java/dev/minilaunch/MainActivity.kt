@@ -107,11 +107,15 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         runCatching { WidgetHost.host(this).startListening() }
+        if (Cal.granted(this)) runCatching {
+            contentResolver.registerContentObserver(android.provider.CalendarContract.CONTENT_URI, true, calObserver)
+        }
     }
 
     override fun onStop() {
         super.onStop()
         runCatching { WidgetHost.host(this).stopListening() }
+        runCatching { contentResolver.unregisterContentObserver(calObserver) }
         closeOverlays(animate = false)
     }
 
@@ -157,6 +161,15 @@ class MainActivity : Activity() {
 
     // own widgets whose content goes stale (screen time, dates) get re-rendered on resume
     private val refreshers = ArrayList<() -> Unit>()
+    private val calRefreshers = ArrayList<() -> Unit>()
+
+    // redraw calendar widgets when events change (sync, edits) while the home screen is up
+    private val calObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        private val redraw = Runnable { calRefreshers.forEach { it() } }
+        override fun onChange(selfChange: Boolean) {
+            home.removeCallbacks(redraw); home.postDelayed(redraw, 800)
+        }
+    }
 
     private fun refreshDynamic() {
         refreshers.forEach { it() }
@@ -198,6 +211,8 @@ class MainActivity : Activity() {
         home.removeAllViews()
         interactive.clear()
         refreshers.clear()
+        calRefreshers.clear()
+        widgetBoxes.clear()
         buildWidgetPage()
         home.gravity = HomeStyle.gravity(Prefs.headerAlign)
 
@@ -266,6 +281,7 @@ class MainActivity : Activity() {
             weatherView = w; tap(w, "tap_weather"); addInfo(w)
         }
         if (info.childCount > 0) header.addView(info)
+        if (header.childCount > 0 && Prefs.headerLine) header.addView(divider(), dividerLp().apply { topMargin = Ui.dp(this@MainActivity, 12) })
         if (header.childCount > 0) home.addView(header, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
         // widgets under header
@@ -350,28 +366,75 @@ class MainActivity : Activity() {
         override fun onFocusChanged(v: View?, s: CharSequence?, f: Boolean, d: Int, r: Rect?) {}
     }
 
+    // half-width widgets that follow each other share a row
     private fun addWidgets(parent: LinearLayout, widthPx: Int, gap: Int, pos: Int, bottomGap: Int = 0) {
         val arr = Prefs.widgets
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            if (WidgetHost.pos(o) != pos) continue
-            val v: View = if (o.optString("t") == "own") {
-                val box = FrameLayout(this)
-                lateinit var render: () -> Unit
-                render = { box.removeAllViews(); box.addView(OwnWidgets.view(this, o) { render() }) }
-                render()
-                if (o.optString("k") in setOf("screentime", "calendar", "prompt", "countdown")) refreshers += render
-                box
-            } else WidgetHost.view(this, o, widthPx) {} ?: continue
-            (v.parent as? ViewGroup)?.removeView(v)
-            val lp = (v.layoutParams as? LinearLayout.LayoutParams) ?: LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-            lp.width = MATCH_PARENT
+        val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.filter { WidgetHost.pos(it) == pos }
+        val split = Ui.dp(this, 14)
+        val halfPx = (widthPx - split) / 2
+        var i = 0
+        while (i < list.size) {
+            val o = list[i]
+            val row: View
+            if (WidgetHost.half(o)) {
+                val members = if (i + 1 < list.size && WidgetHost.half(list[i + 1])) listOf(o, list[i + 1]) else listOf(o)
+                i += members.size
+                val r = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = if (members.size == 2) Gravity.START else HomeStyle.gravity(WidgetHost.align(o))
+                }
+                for (m in members) {
+                    val cell = widgetCell(m, halfPx) ?: continue
+                    val lp = LinearLayout.LayoutParams(halfPx, MATCH_PARENT)
+                    if (r.childCount > 0) lp.marginStart = split
+                    r.addView(cell, lp)
+                }
+                if (r.childCount == 0) continue
+                row = r
+            } else {
+                i++
+                row = widgetCell(o, widthPx) ?: continue
+            }
+            val lp = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
             lp.topMargin = gap
             lp.bottomMargin = bottomGap
-            interactive += v
-            parent.addView(v, lp)
+            parent.addView(row, lp)
         }
     }
+
+    // the widget itself, plus its optional line underneath (pushed to the bottom so paired lines align)
+    private fun widgetCell(o: org.json.JSONObject, widthPx: Int): View? {
+        val v: View = if (o.optString("t") == "own") {
+            val box = FrameLayout(this)
+            lateinit var render: () -> Unit
+            render = {
+                // keep the scroll position when a scrolling widget redraws
+                val y = (box.getChildAt(0) as? ScrollView)?.scrollY ?: 0
+                box.removeAllViews(); box.addView(OwnWidgets.view(this, o) { render() })
+                (box.getChildAt(0) as? ScrollView)?.let { sv -> if (y > 0) sv.post { sv.scrollTo(0, y) } }
+            }
+            render()
+            widgetBoxes += box
+            val k = o.optString("k")
+            if (k in setOf("screentime", "calendar", "prompt", "countdown", "agenda")) refreshers += render
+            if (k in setOf("calendar", "agenda")) calRefreshers += render
+            box
+        } else WidgetHost.view(this, o, widthPx) {} ?: return null
+        (v.parent as? ViewGroup)?.removeView(v)
+        interactive += v
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val vlp = (v.layoutParams as? LinearLayout.LayoutParams) ?: LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        vlp.width = MATCH_PARENT
+        col.addView(v, vlp)
+        if (WidgetHost.line(o)) {
+            col.addView(android.widget.Space(this), LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            col.addView(divider(), dividerLp())
+        }
+        return col
+    }
+
+    private fun divider() = View(this).apply { setBackgroundColor((Prefs.textColor and 0x00FFFFFF) or (0x44 shl 24)) }
+    private fun dividerLp() = LinearLayout.LayoutParams(MATCH_PARENT, maxOf(1, Ui.dp(this, 1))).apply { topMargin = Ui.dp(this@MainActivity, 10) }
 
     private fun buildWidgetPage() {
         widgetPageBox.removeAllViews()
@@ -615,6 +678,9 @@ class MainActivity : Activity() {
     }
 
     private var downOnInteractive = false
+    private val widgetBoxes = ArrayList<FrameLayout>()
+    // a widget that scrolls its content, if the current touch started on one
+    private var downOnScroller: ScrollView? = null
     private var flung = false
 
     private val detector by lazy {
@@ -631,6 +697,9 @@ class MainActivity : Activity() {
                     abs(dy) > abs(dx) && abs(dy) > min && abs(vy) > 600 -> if (dy > 0) "swipe_down" else "swipe_up"
                     else -> return false
                 }
+                // vertical swipes on a scrolling widget belong to the widget
+                val sv = downOnScroller
+                if (sv != null && (g == "swipe_up" || g == "swipe_down") && (sv.canScrollVertically(1) || sv.canScrollVertically(-1))) return false
                 if (widgetPage.visibility == View.VISIBLE) {
                     // reverse of whatever gesture opened the page closes it
                     val opened = Gestures.all.map { it.first }.firstOrNull { Prefs.gesture(it) == "widgets" }
@@ -676,6 +745,7 @@ class MainActivity : Activity() {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             flung = false
             downOnInteractive = hit(interactive, ev.rawX, ev.rawY)
+            downOnScroller = widgetBoxes.firstOrNull { hit(listOf(it), ev.rawX, ev.rawY) }?.getChildAt(0) as? ScrollView
         }
         detector.onTouchEvent(ev)
         if (flung) {

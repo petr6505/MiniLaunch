@@ -28,55 +28,80 @@ object WidgetPicker {
     private var pendingPos = 0
 
     fun open(a: Activity) {
-        class Row(val header: String? = null, val own: String? = null, val info: AppWidgetProviderInfo? = null,
+        class Row(val folder: String? = null, val own: String? = null, val info: AppWidgetProviderInfo? = null,
                   val title: String = "", val sub: String = "")
+        class Group(val key: String, val label: String, val items: List<Row>)
         val pm = a.packageManager
         val d = a.resources.displayMetrics.density
         val awm = WidgetHost.manager(a)
-        val all = ArrayList<Row>()
-        all += Row(header = "minilaunch")
-        for ((k, label) in OwnWidgets.types) all += Row(own = k, title = label, sub = "text only · updates when visible")
-        all += Row(header = "android")
-        val appLabel = HashMap<String, String>()
-        a.getSystemService(UserManager::class.java).userProfiles
+        val me = android.os.Process.myUserHandle()
+        val providers = a.getSystemService(UserManager::class.java).userProfiles
             .flatMap { u -> runCatching { awm.getInstalledProvidersForProfile(u) }.getOrDefault(emptyList()) }
-            .map { p ->
-                val app = appLabel.getOrPut(p.provider.packageName) {
-                    runCatching { pm.getApplicationLabel(pm.getApplicationInfo(p.provider.packageName, 0)).toString() }
-                        .getOrDefault(p.provider.packageName)
-                }
-                Row(info = p, title = "$app - ${p.loadLabel(pm)}",
-                    sub = "${p.targetCellWidth.takeIf { it > 0 } ?: ((p.minWidth / d + 30) / 70).toInt().coerceAtLeast(1)}×" +
-                        "${p.targetCellHeight.takeIf { it > 0 } ?: ((p.minHeight / d + 30) / 70).toInt().coerceAtLeast(1)}")
-            }.sortedBy { it.title.lowercase() }.forEach { all += it }
+        val rawLabels = providers.map { it.provider.packageName }.distinct().associateWith { Names.label(a, it) }
+        fun cells(px: Int, target: Int) = target.takeIf { it > 0 } ?: ((px / d + 30) / 70).toInt().coerceAtLeast(1)
+
+        val groups = ArrayList<Group>()
+        groups += Group("minilaunch", "minilaunch", OwnWidgets.types.map { (k, label) ->
+            Row(own = k, title = label, sub = OwnWidgets.describe(k))
+        })
+        providers.groupBy { it.provider.packageName to it.profile }.map { (key, list) ->
+            val (pkg, user) = key
+            val label = Names.app(a, pkg, rawLabels) + (if (user != me) " [work]" else "")
+            Group(pkg + user.hashCode(), label, list.map { p ->
+                val desc = runCatching { p.loadDescription(a)?.toString() }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+                val size = "${cells(p.minWidth, p.targetCellWidth)}×${cells(p.minHeight, p.targetCellHeight)}"
+                Row(info = p, title = p.loadLabel(pm), sub = listOfNotNull(desc, size).joinToString(" · "))
+            }.sortedBy { it.title.lowercase() })
+        }.sortedBy { it.label.lowercase() }.forEach { groups += it }
 
         val s = Ui.Sheet(a, "add widget")
-        val search = Ui.edit(a, "", "search widgets…")
-        var rows: List<Row> = all
+        val search = Ui.edit(a, "", "search apps or widgets…")
+        val expanded = mutableSetOf("minilaunch")
+        var query = ""
+        fun build(): List<Row> {
+            val out = ArrayList<Row>()
+            for (g in groups) {
+                val items = when {
+                    query.isEmpty() || Apps.normalize(g.label).contains(query) -> g.items
+                    else -> g.items.filter { Apps.normalize(it.title).contains(query) || Apps.normalize(it.sub).contains(query) }
+                }
+                if (items.isEmpty()) continue
+                out += Row(folder = g.key, title = g.label, sub = "${g.items.size} widget" + if (g.items.size == 1) "" else "s")
+                if (query.isNotEmpty() || g.key in expanded) out += items
+            }
+            return out
+        }
+        var rows: List<Row> = build()
         val previews = HashMap<String, android.graphics.drawable.Drawable?>()
         val iconOnly = HashSet<String>()
         val loader = java.util.concurrent.Executors.newSingleThreadExecutor()
         val main = android.os.Handler(android.os.Looper.getMainLooper())
         fun keyOf(i: AppWidgetProviderInfo) = i.provider.flattenToShortString() + i.profile.hashCode()
+        val indent = Ui.dp(a, 18)
 
         val adapter = object : BaseAdapter() {
             override fun getCount() = rows.size
             override fun getItem(p: Int) = rows[p]
             override fun getItemId(p: Int) = p.toLong()
             override fun getViewTypeCount() = 3
-            override fun getItemViewType(p: Int) = when { rows[p].header != null -> 0; rows[p].own != null -> 1; else -> 2 }
-            override fun isEnabled(p: Int) = rows[p].header == null
+            override fun getItemViewType(p: Int) = when { rows[p].folder != null -> 0; rows[p].own != null -> 1; else -> 2 }
             override fun getView(p: Int, v: View?, parent: ViewGroup?): View {
                 val r = rows[p]
-                if (r.header != null) {
-                    val t = (v as? TextView) ?: Ui.tv(a, "", 12f, Ui.DIM).apply {
-                        setPadding(0, Ui.dp(a, 16), 0, Ui.dp(a, 4)); letterSpacing = 0.1f
+                if (r.folder != null) {
+                    val box = (v as? LinearLayout) ?: LinearLayout(a).apply {
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                        val pad = Ui.dp(a, 13); setPadding(0, pad, 0, pad)
+                        addView(Ui.tv(a, "", 16f, Ui.FG, bold = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                        addView(Ui.tv(a, "", 12f, Ui.DIM))
                     }
-                    t.text = r.header.uppercase(); return t
+                    val open = query.isNotEmpty() || r.folder in expanded
+                    (box.getChildAt(0) as TextView).text = (if (open) "▾ " else "▸ ") + r.title
+                    (box.getChildAt(1) as TextView).text = r.sub
+                    return box
                 }
                 val box = (v as? LinearLayout) ?: LinearLayout(a).apply {
                     orientation = LinearLayout.VERTICAL
-                    val pad = Ui.dp(a, 10); setPadding(0, pad, 0, pad)
+                    val pad = Ui.dp(a, 10); setPadding(indent, pad, 0, pad)
                     addView(Ui.tv(a, "", 15f)); addView(Ui.tv(a, "", 12f, Ui.DIM).apply { setPadding(0, Ui.dp(a, 3), 0, Ui.dp(a, 6)) })
                     if (r.own != null) addView(Ui.tv(a, "", 12f, 0xFFBBBBBB.toInt()).apply {
                         val q = Ui.dp(a, 10); setPadding(q, q, q, q); background = Ui.box(a, fill = 0xFF1A1A1A.toInt())
@@ -115,6 +140,12 @@ object WidgetPicker {
         val list = ListView(a).apply { divider = null; this.adapter = adapter; isVerticalScrollBarEnabled = false }
         list.setOnItemClickListener { _, _, p, _ ->
             val r = rows[p]
+            if (r.folder != null) {
+                if (query.isNotEmpty()) return@setOnItemClickListener
+                if (!expanded.add(r.folder)) expanded.remove(r.folder)
+                rows = build(); adapter.notifyDataSetChanged()
+                return@setOnItemClickListener
+            }
             s.dialog.dismiss()
             askPosition(a) { pos ->
                 pendingPos = pos
@@ -123,9 +154,8 @@ object WidgetPicker {
         }
         search.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(e: Editable?) {
-                val q = Apps.normalize(e.toString())
-                rows = if (q.isEmpty()) all else all.filter { it.header == null && Apps.normalize(it.title).contains(q) }
-                adapter.notifyDataSetChanged()
+                query = Apps.normalize(e.toString().trim())
+                rows = build(); adapter.notifyDataSetChanged()
             }
             override fun beforeTextChanged(c: CharSequence?, s: Int, b: Int, n: Int) {}
             override fun onTextChanged(c: CharSequence?, s: Int, b: Int, n: Int) {}
@@ -148,6 +178,9 @@ object WidgetPicker {
                     o.put("label", label).put("date", date.trim()); WidgetHost.add(o); onAdded?.invoke()
                 }
             }
+        } else if (k == "agenda" || k == "calendar") {
+            val done = { WidgetHost.add(o); onAdded?.invoke(); if (!Cal.granted(a)) Cal.ask(a) }
+            if (Cal.apps(a).size > 1) Cal.pickApp(a, o) { pkg -> o.put("app", pkg); done() } else done()
         } else { WidgetHost.add(o); onAdded?.invoke() }
     }
 

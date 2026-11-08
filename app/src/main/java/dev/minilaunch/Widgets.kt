@@ -34,6 +34,8 @@ object WidgetHost {
     fun pos(o: JSONObject) = o.optInt("pos", 0).coerceIn(0, POS_PAGE)
     // -1 = same as home apps
     fun align(o: JSONObject) = o.optInt("align", -1).let { if (it < 0) Prefs.align else it }
+    fun half(o: JSONObject) = o.optBoolean("half")
+    fun line(o: JSONObject) = o.optBoolean("line")
     private var host: AppWidgetHost? = null
 
     fun host(ctx: Context): AppWidgetHost = host ?: AppWidgetHost(ctx.applicationContext, HOST_ID).also { host = it }
@@ -68,12 +70,7 @@ object WidgetHost {
     fun title(ctx: Context, o: JSONObject): String = when (o.optString("t")) {
         "sys" -> {
             val info = manager(ctx).getAppWidgetInfo(o.optInt("id"))
-            if (info == null) "(missing widget)" else {
-                val app = runCatching {
-                    ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(info.provider.packageName, 0))
-                }.getOrDefault(info.provider.packageName)
-                "$app - ${info.loadLabel(ctx.packageManager)}"
-            }
+            if (info == null) "(missing widget)" else "${Names.app(ctx, info.provider.packageName)} - ${info.loadLabel(ctx.packageManager)}"
         }
         else -> OwnWidgets.types.firstOrNull { it.first == o.optString("k") }?.second ?: "widget"
     }
@@ -105,6 +102,7 @@ object OwnWidgets {
         "note" to "note / intention",
         "countdown" to "countdown",
         "prompt" to "daily prompt",
+        "agenda" to "calendar events",
         "calendar" to "month calendar",
     )
 
@@ -114,8 +112,18 @@ object OwnWidgets {
         "note" -> "read before you scroll."
         "countdown" -> "12 days until holiday"
         "prompt" -> "what did you pick up the phone for?"
+        "agenda" -> "today\n  09:00   team meeting\n  all day trip to the hills\ntomorrow\n  18:30   dinner with friends"
         "calendar" -> "november 2026\nmo tu we th fr sa su\n                   1\n 2  3  4  5  6  7  8"
         else -> ""
+    }
+
+    // widgets that can get a fixed height and scroll inside it
+    val SCROLLABLE = setOf("agenda", "todo")
+
+    fun describe(type: String): String = when (type) {
+        "agenda" -> "upcoming events from samsung, google, outlook… calendars"
+        "calendar" -> "this month · days with events stand out"
+        else -> "text only · updates when visible"
     }
 
     fun create(type: String): JSONObject = JSONObject().put("t", "own").put("k", type).put("uid", UUID.randomUUID().toString().take(8))
@@ -172,7 +180,18 @@ object OwnWidgets {
                 val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
                 box.addView(text(a, HomeStyle.case(PROMPTS[day % PROMPTS.size]), 1f, dim = true))
             }
-            "calendar" -> box.addView(calendar(a))
+            "agenda" -> agenda(a, box, o)
+            "calendar" -> calendar(a, box, o)
+        }
+        // fixed height: the content scrolls inside it, fading out at the edges
+        val h = o.optInt("h", 0)
+        if (o.optString("k") in SCROLLABLE && h > 0) return android.widget.ScrollView(a).apply {
+            isVerticalScrollBarEnabled = false
+            isVerticalFadingEdgeEnabled = true
+            setFadingEdgeLength(Ui.dp(a, 28))
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(box)
+            layoutParams = android.widget.FrameLayout.LayoutParams(MATCH_PARENT, Ui.dp(a, h))
         }
         return box
     }
@@ -244,7 +263,7 @@ object OwnWidgets {
         })
     }
 
-    private fun calendar(a: Activity): View {
+    private fun calendar(a: Activity, box: LinearLayout, o: JSONObject) {
         val c = Calendar.getInstance()
         val today = c.get(Calendar.DAY_OF_MONTH)
         val title = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(c.time)
@@ -254,6 +273,18 @@ object OwnWidgets {
         val names = (0 until 7).map {
             val d = Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, (c.firstDayOfWeek + it - 1) % 7 + 1) }
             SimpleDateFormat("EE", Locale.getDefault()).format(d.time).take(2)
+        }
+        // days with events stay at full brightness, the rest are dimmed
+        val marked: Set<Int>? = if (!Cal.granted(a)) null else {
+            val monthStart = Calendar.getInstance().apply {
+                set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val monthEnd = Calendar.getInstance().apply { timeInMillis = monthStart; add(Calendar.MONTH, 1) }.timeInMillis
+            val firstDay = Cal.julian(monthStart)
+            val set = HashSet<Int>()
+            for (e in Cal.instances(a, o, monthStart, monthEnd)) for (d in e.startDay..e.endDay) set += d - firstDay + 1
+            set
         }
         val sb = android.text.SpannableStringBuilder()
         sb.append(HomeStyle.case(title)).append("\n")
@@ -267,11 +298,84 @@ object OwnWidgets {
             if (d == today) {
                 sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, sb.length, 0)
                 sb.setSpan(android.text.style.UnderlineSpan(), start, sb.length, 0)
+            } else if (marked != null && d !in marked) {
+                sb.setSpan(android.text.style.ForegroundColorSpan(faintColor()), start, sb.length, 0)
             }
             col++
             if (col % 7 == 0) sb.append("\n") else sb.append(" ")
         }
-        return text(a, sb, 0.95f).apply { setOnClickListener { Actions.runGlobal(a, "calendar") } }
+        box.addView(text(a, sb, 0.95f).apply { setOnClickListener { Cal.openAt(a, o) } })
+    }
+
+    private fun faintColor(): Int = (Prefs.textColor and 0x00FFFFFF) or (0x55 shl 24)
+
+    private fun agenda(a: Activity, box: LinearLayout, o: JSONObject) {
+        if (!Cal.granted(a)) {
+            box.addView(text(a, HomeStyle.case("calendar: tap to allow access"), 1f, dim = true).apply { setOnClickListener { Cal.ask(a) } })
+            return
+        }
+        val days = o.optInt("days", 7).coerceIn(1, 60)
+        // 0 = no limit; a scrolling widget shows everything by default
+        val max = o.optInt("max", if (o.optInt("h", 0) > 0) 0 else 8).let { if (it <= 0) Int.MAX_VALUE else it }
+        val showAllDay = o.optBoolean("allday", true)
+        val now = System.currentTimeMillis()
+        val dayStart = Usage.startOfDay()
+        val dayEnd = Calendar.getInstance().apply { timeInMillis = dayStart; add(Calendar.DAY_OF_YEAR, days) }.timeInMillis
+        val today = Cal.julian(now)
+        val lastDay = Cal.julian(dayEnd - 1)
+        // an event that started earlier but is still running is listed under today
+        val items = Cal.instances(a, o, dayStart, dayEnd)
+            .filter { (showAllDay || !it.allDay) && (it.allDay || it.end > now) }
+            .map { maxOf(it.startDay, today) to it }
+            .filter { it.first <= lastDay }
+            .sortedWith(compareBy({ it.first }, { !it.second.allDay }, { it.second.begin }))
+        val left = curAlign == 0
+        val is24 = when (Prefs.clockMode) { 1 -> true; 2 -> false; else -> android.text.format.DateFormat.is24HourFormat(a) }
+        val tf = SimpleDateFormat(if (is24) "HH:mm" else "h:mma", Locale.getDefault())
+        val df = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+        fun dayMs(j: Int) = Calendar.getInstance().apply { timeInMillis = dayStart; add(Calendar.DAY_OF_YEAR, j - today) }.timeInMillis
+        fun dayName(j: Int) = when (j - today) { 0 -> "today"; 1 -> "tomorrow"; else -> df.format(dayMs(j)) }
+
+        if (items.isEmpty()) {
+            box.addView(text(a, HomeStyle.case(if (days == 1) "nothing today" else "nothing in the next $days days"), 1f, dim = true)
+                .apply { setOnClickListener { Cal.openAt(a, o) } })
+            return
+        }
+        var lastShown = -1
+        for ((idx, pair) in items.withIndex()) {
+            val (day, e) = pair
+            if (idx >= max) {
+                box.addView(text(a, HomeStyle.case("+ ${items.size - max} more"), 0.85f, dim = true).apply {
+                    setPadding(0, Ui.dp(a, 4), 0, 0); setOnClickListener { Cal.openAt(a, o) }
+                })
+                break
+            }
+            if (day != lastShown) {
+                lastShown = day
+                box.addView(text(a, HomeStyle.case(dayName(day)), 0.85f, dim = true).apply {
+                    setPadding(0, if (idx == 0) 0 else Ui.dp(a, 8), 0, Ui.dp(a, 2))
+                    setOnClickListener { Cal.openAt(a, o, dayMs(day)) }
+                })
+            }
+            val time = when {
+                e.allDay -> "all day"
+                e.startDay < day -> "→" + tf.format(e.end).lowercase()
+                else -> tf.format(e.begin).lowercase()
+            }
+            val until = if (e.endDay > day) "  → " + (if (e.endDay - today == 1) "tomorrow" else df.format(dayMs(e.endDay))) else ""
+            val line = if (left) "  " + time.padEnd(7) + " " + e.title + until else time + "  " + e.title + until
+            box.addView(text(a, HomeStyle.case(line)).apply {
+                setPadding(0, Ui.dp(a, 2), 0, Ui.dp(a, 2))
+                // wrapped title lines hang under the title, not under the time
+                if (left) {
+                    val sp = android.text.SpannableString(text)
+                    sp.setSpan(android.text.style.LeadingMarginSpan.Standard(0, paint.measureText("  " + "".padEnd(7) + " ").toInt()), 0, sp.length, 0)
+                    text = sp
+                }
+                if (!left) gravity = HomeStyle.gravity(curAlign)
+                setOnClickListener { Cal.openEvent(a, o, e) }
+            })
+        }
     }
 
     private val PROMPTS = listOf(
